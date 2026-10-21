@@ -16,9 +16,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lia.assistant.ChatViewModel
 import com.lia.assistant.data.ChatMessage
@@ -36,15 +39,27 @@ fun ChatScreen(vm: ChatViewModel = viewModel()) {
 
     val listState = rememberLazyListState()
     val ctx = LocalContext.current
-    val hasGroq = remember { KeyStore.get(ctx, KeyStore.KEY_GROQ)?.isNotBlank() == true }
-    val hasGemini = remember { KeyStore.get(ctx, KeyStore.KEY_GEMINI)?.isNotBlank() == true }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var hasGroq by remember { mutableStateOf(false) }
+    var hasGemini by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasGroq = KeyStore.get(ctx, KeyStore.KEY_GROQ)?.isNotBlank() == true
+                hasGemini = KeyStore.get(ctx, KeyStore.KEY_GEMINI)?.isNotBlank() == true
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Top bar with model toggle + clear
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -62,10 +77,18 @@ fun ChatScreen(vm: ChatViewModel = viewModel()) {
             }
             Row {
                 TextButton(onClick = { useGroq = !useGroq }) {
-                    Text(if (useGroq) "→ Gemini" else "→ Groq", color = Color(0xFF33D6A6), fontSize = 12.sp)
+                    Text(
+                        if (useGroq) "→ Gemini" else "→ Groq",
+                        color = Color(0xFF33D6A6),
+                        fontSize = 12.sp
+                    )
                 }
                 IconButton(onClick = { showClearConfirm = true }) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Clear", tint = Color.White.copy(alpha = 0.6f))
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "Clear",
+                        tint = Color.White.copy(alpha = 0.6f)
+                    )
                 }
             }
         }
@@ -86,7 +109,6 @@ fun ChatScreen(vm: ChatViewModel = viewModel()) {
             }
         }
 
-        // Messages
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -106,8 +128,16 @@ fun ChatScreen(vm: ChatViewModel = viewModel()) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("💬", fontSize = 40.sp)
                             Spacer(Modifier.height(12.dp))
-                            Text("No messages yet", color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.SemiBold)
-                            Text("Ask something to get started", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                            Text(
+                                "No messages yet",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "Ask something to get started",
+                                color = Color.White.copy(alpha = 0.4f),
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }
@@ -126,14 +156,17 @@ fun ChatScreen(vm: ChatViewModel = viewModel()) {
                                 .background(Color(0xFF15151F))
                                 .padding(horizontal = 14.dp, vertical = 10.dp)
                         ) {
-                            Text("LIA is thinking…", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+                            Text(
+                                "LIA is thinking…",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 13.sp
+                            )
                         }
                     }
                 }
             }
         }
 
-        // Error banner
         if (error != null) {
             Row(
                 modifier = Modifier
@@ -144,14 +177,18 @@ fun ChatScreen(vm: ChatViewModel = viewModel()) {
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(error!!, color = Color.White, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Text(
+                    error!!,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(1f)
+                )
                 TextButton(onClick = { vm.dismissError() }) {
                     Text("Dismiss", color = Color(0xFF33D6A6), fontSize = 12.sp)
                 }
             }
         }
 
-        // Input bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
