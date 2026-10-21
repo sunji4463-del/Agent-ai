@@ -3,6 +3,8 @@ package com.lia.assistant
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lia.assistant.commands.CommandExecutor
+import com.lia.assistant.commands.CommandParser
 import com.lia.assistant.data.ChatMessage
 import com.lia.assistant.data.ChatStorage
 import com.lia.assistant.data.KeyStore
@@ -96,32 +98,45 @@ class VoiceViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
             try {
-                val userMsg = ChatMessage(System.currentTimeMillis(), "user", text)
-                val history = withContext(Dispatchers.IO) {
-                    val h = ChatStorage.load(ctx) + userMsg
-                    ChatStorage.save(ctx, h)
-                    h
+                val command = CommandParser.parse(text)
+                val replyText = if (command != null) {
+                    withContext(Dispatchers.IO) {
+                        val r = CommandExecutor.execute(ctx, command)
+                        // Save command + reply to chat history
+                        val userMsg = ChatMessage(System.currentTimeMillis(), "user", text)
+                        val asstMsg = ChatMessage(System.currentTimeMillis() + 1, "assistant", r)
+                        val h = ChatStorage.load(ctx) + userMsg + asstMsg
+                        ChatStorage.save(ctx, h)
+                        r
+                    }
+                } else {
+                    val userMsg = ChatMessage(System.currentTimeMillis(), "user", text)
+                    val history = withContext(Dispatchers.IO) {
+                        val h = ChatStorage.load(ctx) + userMsg
+                        ChatStorage.save(ctx, h)
+                        h
+                    }
+                    val groqKey = KeyStore.get(ctx, KeyStore.KEY_GROQ)
+                    val geminiKey = KeyStore.get(ctx, KeyStore.KEY_GEMINI)
+                    val recent = history.takeLast(20).map { GroqMessage(it.role, it.content) }
+
+                    val ai = when {
+                        !groqKey.isNullOrBlank() -> ApiClient.askGroq(groqKey, recent)
+                        !geminiKey.isNullOrBlank() -> ApiClient.askGemini(geminiKey, recent)
+                        else -> throw IllegalStateException("No API key. Open Settings first.")
+                    }
+                    val finalReply = ai.ifBlank { "I couldn't think of an answer." }
+                    withContext(Dispatchers.IO) {
+                        ChatStorage.save(ctx, history + ChatMessage(
+                            System.currentTimeMillis() + 1, "assistant", finalReply
+                        ))
+                    }
+                    finalReply
                 }
 
-                val groqKey = KeyStore.get(ctx, KeyStore.KEY_GROQ)
-                val geminiKey = KeyStore.get(ctx, KeyStore.KEY_GEMINI)
-                val recent = history.takeLast(20).map { GroqMessage(it.role, it.content) }
-
-                val replyText = when {
-                    !groqKey.isNullOrBlank() -> ApiClient.askGroq(groqKey, recent)
-                    !geminiKey.isNullOrBlank() -> ApiClient.askGemini(geminiKey, recent)
-                    else -> throw IllegalStateException("No API key. Open Settings first.")
-                }
-
-                val finalReply = replyText.ifBlank { "I couldn't think of an answer." }
-                val assistantMsg = ChatMessage(System.currentTimeMillis() + 1, "assistant", finalReply)
-                withContext(Dispatchers.IO) {
-                    ChatStorage.save(ctx, history + assistantMsg)
-                }
-
-                VoiceStateHolder.setReply(finalReply)
+                VoiceStateHolder.setReply(replyText)
                 VoiceStateHolder.setState(VoiceState.Speaking)
-                tts?.speak(finalReply)
+                tts?.speak(replyText)
             } catch (e: Exception) {
                 VoiceStateHolder.setError(e.message ?: "Unknown error")
                 VoiceStateHolder.setState(VoiceState.Idle)
