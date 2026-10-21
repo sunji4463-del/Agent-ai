@@ -64,6 +64,7 @@ fun LiaApp() {
             composable(Screen.Connections.route) { ConnectionsScreen() }
             composable(Screen.Settings.route) { SettingsScreen() }
             composable("history") { HistoryScreen() }
+            composable("voice") { VoiceScreen(navController) }
         }
     }
 }
