@@ -1,54 +1,81 @@
 package com.lia.assistant.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CallEnd
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lia.assistant.ui.theme.LiaColors
+import com.lia.assistant.data.ChatMessage
+import com.lia.assistant.data.ChatStorage
 
 @Composable
-fun HistoryScreen() {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("History", fontSize = 28.sp, color = LiaColors.TextMain)
-        Spacer(Modifier.height(24.dp))
-        Text("No chats yet. They will appear here from Phase 2.", color = LiaColors.TextSub)
+fun PlaceholderScreen(title: String) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, color = Color.White)
+            Spacer(Modifier.height(4.dp))
+            Text("Coming in a later phase", color = Color.White.copy(alpha = 0.5f))
+        }
     }
 }
 
 @Composable
-fun VoiceScreen(onEnd: () -> Unit) {
+fun HistoryScreen() {
+    val ctx = LocalContext.current
+    var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        messages = ChatStorage.load(ctx)
+    }
+
     Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp)
     ) {
-        Text("Lia", fontFamily = FontFamily.Cursive, fontSize = 30.sp, color = LiaColors.PurpleLight)
-        Spacer(Modifier.weight(1f))
-        GlowOrb(280.dp)
-        Spacer(Modifier.height(24.dp))
-        Text(
-            "Lia is listening...", fontSize = 24.sp, fontStyle = FontStyle.Italic,
-            fontFamily = FontFamily.Serif, color = LiaColors.TextMain
-        )
-        Text("Voice will be enabled in Phase 3", fontSize = 12.sp, color = LiaColors.TextSub)
-        Spacer(Modifier.weight(1f))
-        Box(
-            Modifier.size(72.dp).clip(CircleShape).background(Color(0xFFEF4444)).clickable { onEnd() },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Rounded.CallEnd, "End", tint = Color.White, modifier = Modifier.size(30.dp))
+        LiaTopBar("History", "Saved chat sessions")
+        if (messages.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No history yet", color = Color.White.copy(alpha = 0.5f))
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(messages) { msg ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF15151F))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            if (msg.role == "user") "You" else "LIA",
+                            color = if (msg.role == "user") Color(0xFF7C5CFF) else Color(0xFF33D6A6),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            modifier = Modifier.width(48.dp)
+                        )
+                        Text(
+                            msg.content,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            maxLines = 2
+                        )
+                    }
+                }
+                item { Spacer(Modifier.height(20.dp)) }
+            }
         }
-        Spacer(Modifier.height(24.dp))
     }
 }
