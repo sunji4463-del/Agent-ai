@@ -7,7 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,9 +18,24 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.lia.assistant.voice.VoiceServiceState
+import com.lia.assistant.voice.VoiceState
+import com.lia.assistant.voice.VoiceStateHolder
 
 @Composable
 fun HomeScreen(navController: NavController) {
+    val bgRunning by VoiceServiceState.isRunning.collectAsState()
+    val voiceState by VoiceStateHolder.state.collectAsState()
+
+    val statusText = when {
+        bgRunning -> "Active"
+        voiceState == VoiceState.Listening -> "Listening"
+        voiceState == VoiceState.Thinking -> "Thinking"
+        voiceState == VoiceState.Speaking -> "Speaking"
+        else -> "Ready"
+    }
+    val statusActive = bgRunning || voiceState != VoiceState.Idle
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -36,9 +51,13 @@ fun HomeScreen(navController: NavController) {
         ) {
             Column {
                 Text("LIA", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                Text("Your personal AI assistant", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                Text(
+                    "Your personal AI assistant",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
             }
-            StatusPill(text = "Ready", active = true)
+            StatusPill(text = statusText, active = statusActive)
         }
 
         Spacer(Modifier.weight(1f))
@@ -72,14 +91,15 @@ fun HomeScreen(navController: NavController) {
         Spacer(Modifier.height(30.dp))
 
         Text(
-            "Tap to Talk",
+            if (bgRunning) "Listening in background" else "Tap to Talk",
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
             color = Color.White
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Speak with LIA using your voice",
+            if (bgRunning) "Voice service is running — close app to use everywhere"
+            else "Speak with LIA using your voice",
             fontSize = 13.sp,
             color = Color.White.copy(alpha = 0.5f),
             textAlign = TextAlign.Center
