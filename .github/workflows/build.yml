@@ -21,15 +21,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools' # 'tools' প্যাকেজের বদলে 'platform-tools' ব্যবহার করা হলো
+          packages: 'platform-tools'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew || true
 
       - name: Build Debug APK
         run: gradle assembleDebug
