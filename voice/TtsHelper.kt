@@ -17,7 +17,6 @@ class TtsHelper(context: Context) {
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                setupLanguage()
                 tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) { onStart?.invoke() }
                     override fun onDone(utteranceId: String?) { onDone?.invoke() }
@@ -31,14 +30,26 @@ class TtsHelper(context: Context) {
                 }
             }
         }
+        tts.setSpeechRate(1.0f)
     }
 
-    private fun setupLanguage() {
-        val res = tts.setLanguage(Locale.getDefault())
-        if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
-            tts.language = Locale.US
+    private fun localeForText(text: String): Locale {
+        val hasBengali = text.any { it in '\u0980'..'\u09FF' }
+        val hasLatin = text.any { it in 'a'..'z' || it in 'A'..'Z' }
+
+        return when {
+            hasBengali && !hasLatin -> Locale("bn", "BD")
+            hasBengali && hasLatin -> Locale("bn", "BD")
+            hasLatin -> Locale.US
+            else -> Locale.getDefault()
         }
-        tts.setSpeechRate(1.0f)
+    }
+
+    private fun applyLocale(locale: Locale) {
+        val res = tts.setLanguage(locale)
+        if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+            tts.setLanguage(Locale.US)
+        }
     }
 
     fun speak(text: String) {
@@ -47,6 +58,7 @@ class TtsHelper(context: Context) {
             pendingText = text
             return
         }
+        applyLocale(localeForText(text))
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "lia_${System.currentTimeMillis()}")
     }
 
