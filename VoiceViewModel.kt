@@ -10,29 +10,20 @@ import com.lia.assistant.net.ApiClient
 import com.lia.assistant.net.GroqMessage
 import com.lia.assistant.voice.SpeechRecognizerHelper
 import com.lia.assistant.voice.TtsHelper
+import com.lia.assistant.voice.VoiceServiceState
 import com.lia.assistant.voice.VoiceState
+import com.lia.assistant.voice.VoiceStateHolder
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class VoiceViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val _state = MutableStateFlow(VoiceState.Idle)
-    val state: StateFlow<VoiceState> = _state
-
-    private val _partial = MutableStateFlow("")
-    val partial: StateFlow<String> = _partial
-
-    private val _reply = MutableStateFlow("")
-    val reply: StateFlow<String> = _reply
-
-    private val _userSaid = MutableStateFlow("")
-    val userSaid: StateFlow<String> = _userSaid
-
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error
+    val state = VoiceStateHolder.state
+    val partial = VoiceStateHolder.partial
+    val reply = VoiceStateHolder.reply
+    val userSaid = VoiceStateHolder.userSaid
+    val error = VoiceStateHolder.error
 
     private var speech: SpeechRecognizerHelper? = null
     private var tts: TtsHelper? = null
@@ -43,58 +34,64 @@ class VoiceViewModel(app: Application) : AndroidViewModel(app) {
         if (speech == null) {
             speech = SpeechRecognizerHelper(
                 context = ctx,
-                onPartial = { _partial.value = it },
+                onPartial = { VoiceStateHolder.setPartial(it) },
                 onResult = { text -> handleResult(text) },
                 onError = { msg ->
-                    if (_state.value == VoiceState.Listening) {
-                        _error.value = msg
-                        _state.value = VoiceState.Idle
+                    if (VoiceStateHolder.state.value == VoiceState.Listening) {
+                        VoiceStateHolder.setError(msg)
+                        VoiceStateHolder.setState(VoiceState.Idle)
                     }
                 },
-                onReadyForSpeech = { _state.value = VoiceState.Listening },
+                onReadyForSpeech = { VoiceStateHolder.setState(VoiceState.Listening) },
                 onEndOfSpeech = {}
             )
         }
 
         if (tts == null) {
             tts = TtsHelper(ctx).apply {
-                onStart = { _state.value = VoiceState.Speaking }
-                onDone = { if (_state.value == VoiceState.Speaking) _state.value = VoiceState.Idle }
+                onStart = { VoiceStateHolder.setState(VoiceState.Speaking) }
+                onDone = {
+                    if (VoiceStateHolder.state.value == VoiceState.Speaking) {
+                        VoiceStateHolder.setState(VoiceState.Idle)
+                    }
+                }
             }
         }
     }
 
     fun startListening() {
+        if (VoiceServiceState.isRunning.value) return
         ensureInit()
-        _error.value = null
-        _partial.value = ""
-        _reply.value = ""
-        _userSaid.value = ""
-        _state.value = VoiceState.Listening
+        VoiceStateHolder.reset()
+        VoiceStateHolder.setState(VoiceState.Listening)
         speech?.start()
     }
 
     fun stopListening() {
         speech?.stop()
-        if (_state.value == VoiceState.Listening) _state.value = VoiceState.Idle
+        if (VoiceStateHolder.state.value == VoiceState.Listening) {
+            VoiceStateHolder.setState(VoiceState.Idle)
+        }
     }
 
     fun stopSpeaking() {
         tts?.stop()
-        if (_state.value == VoiceState.Speaking) _state.value = VoiceState.Idle
+        if (VoiceStateHolder.state.value == VoiceState.Speaking) {
+            VoiceStateHolder.setState(VoiceState.Idle)
+        }
     }
 
-    fun dismissError() { _error.value = null }
+    fun dismissError() { VoiceStateHolder.setError(null) }
 
     private fun handleResult(text: String) {
         if (text.isBlank()) {
-            _state.value = VoiceState.Idle
+            VoiceStateHolder.setState(VoiceState.Idle)
             return
         }
-        _userSaid.value = text
-        _partial.value = ""
-        _reply.value = ""
-        _state.value = VoiceState.Thinking
+        VoiceStateHolder.setUserSaid(text)
+        VoiceStateHolder.setPartial("")
+        VoiceStateHolder.setReply("")
+        VoiceStateHolder.setState(VoiceState.Thinking)
 
         viewModelScope.launch {
             val ctx = getApplication<Application>()
@@ -122,12 +119,12 @@ class VoiceViewModel(app: Application) : AndroidViewModel(app) {
                     ChatStorage.save(ctx, history + assistantMsg)
                 }
 
-                _reply.value = finalReply
-                _state.value = VoiceState.Speaking
+                VoiceStateHolder.setReply(finalReply)
+                VoiceStateHolder.setState(VoiceState.Speaking)
                 tts?.speak(finalReply)
             } catch (e: Exception) {
-                _error.value = e.message ?: "Unknown error"
-                _state.value = VoiceState.Idle
+                VoiceStateHolder.setError(e.message ?: "Unknown error")
+                VoiceStateHolder.setState(VoiceState.Idle)
             }
         }
     }
