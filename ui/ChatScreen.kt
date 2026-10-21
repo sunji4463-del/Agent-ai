@@ -5,113 +5,238 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lia.assistant.ui.theme.LiaColors
-
-data class Msg(val text: String, val fromUser: Boolean)
-
-/** Phase 1 এর সাময়িক ব্যবস্থা: হোম থেকে প্রশ্ন চ্যাটে পাঠানোর জন্য */
-object PendingQuery { var text: String? = null }
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lia.assistant.ChatViewModel
+import com.lia.assistant.data.ChatMessage
+import com.lia.assistant.data.KeyStore
 
 @Composable
-fun ChatScreen() {
-    val msgs = remember {
-        mutableStateListOf(Msg("Hi! I'm Lia. Ask me anything.", false))
-    }
+fun ChatScreen(vm: ChatViewModel = viewModel()) {
+    val messages by vm.messages.collectAsState()
+    val sending by vm.sending.collectAsState()
+    val error by vm.error.collectAsState()
+
     var input by remember { mutableStateOf("") }
+    var useGroq by remember { mutableStateOf(true) }
+    var showClearConfirm by remember { mutableStateOf(false) }
+
     val listState = rememberLazyListState()
+    val ctx = LocalContext.current
+    val hasGroq = remember { KeyStore.get(ctx, KeyStore.KEY_GROQ)?.isNotBlank() == true }
+    val hasGemini = remember { KeyStore.get(ctx, KeyStore.KEY_GEMINI)?.isNotBlank() == true }
 
-    fun send(t: String) {
-        if (t.isBlank()) return
-        msgs.add(Msg(t.trim(), true))
-        msgs.add(Msg("AI replies will be connected in Phase 2 (Groq / Gemini).", false))
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
-    LaunchedEffect(Unit) {
-        PendingQuery.text?.let { send(it); PendingQuery.text = null }
-    }
-    LaunchedEffect(msgs.size) { listState.animateScrollToItem(msgs.lastIndex) }
-
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Top bar with model toggle + clear
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                Modifier.size(38.dp).clip(CircleShape)
-                    .background(Brush.radialGradient(listOf(Color(0xFF8B5CF6), Color(0xFF2A1B5E))))
-            )
-            Spacer(Modifier.width(10.dp))
             Column {
-                Text("Lia", color = LiaColors.TextMain, fontSize = 17.sp)
-                Text("Here to help", color = LiaColors.TextSub, fontSize = 11.sp)
+                Text("Chat", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(
+                    if (useGroq) "Groq · llama-3.1-8b" else "Gemini · 1.5-flash",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
+            }
+            Row {
+                TextButton(onClick = { useGroq = !useGroq }) {
+                    Text(if (useGroq) "→ Gemini" else "→ Groq", color = Color(0xFF33D6A6), fontSize = 12.sp)
+                }
+                IconButton(onClick = { showClearConfirm = true }) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Clear", tint = Color.White.copy(alpha = 0.6f))
+                }
             }
         }
 
-        LazyColumn(
-            Modifier.weight(1f).padding(horizontal = 16.dp),
-            state = listState,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(msgs) { Bubble(it) }
+        if (!hasGroq && !hasGemini) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0x33FF6B6B))
+            ) {
+                Text(
+                    "⚠ No API key found. Go to Settings and add Groq or Gemini key.",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
         }
 
+        // Messages
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (messages.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 60.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("💬", fontSize = 40.sp)
+                            Spacer(Modifier.height(12.dp))
+                            Text("No messages yet", color = Color.White.copy(alpha = 0.6f), fontWeight = FontWeight.SemiBold)
+                            Text("Ask something to get started", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            items(messages, key = { it.id }) { msg ->
+                Bubble(msg)
+            }
+
+            if (sending) {
+                item {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFF15151F))
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                        ) {
+                            Text("LIA is thinking…", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Error banner
+        if (error != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0x33FF6B6B))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(error!!, color = Color.White, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                TextButton(onClick = { vm.dismissError() }) {
+                    Text("Dismiss", color = Color(0xFF33D6A6), fontSize = 12.sp)
+                }
+            }
+        }
+
+        // Input bar
         Row(
-            Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFF15151F))
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedTextField(
+            TextField(
                 value = input,
                 onValueChange = { input = it },
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(24.dp),
-                colors = liaFieldColors(),
-                placeholder = { Text("Message Lia", color = LiaColors.TextSub) },
-                maxLines = 4
+                placeholder = { Text("Type a message…", color = Color.White.copy(alpha = 0.4f)) },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                ),
+                maxLines = 4,
+                enabled = !sending
             )
-            Spacer(Modifier.width(8.dp))
             IconButton(
-                onClick = { send(input); input = "" },
-                modifier = Modifier.size(48.dp).clip(CircleShape).background(LiaColors.Purple)
+                enabled = !sending && input.isNotBlank(),
+                onClick = {
+                    val text = input.trim()
+                    if (text.isNotEmpty()) {
+                        input = ""
+                        vm.send(text, useGroq = useGroq)
+                    }
+                }
             ) {
-                Icon(Icons.AutoMirrored.Rounded.Send, "Send", tint = Color.White)
+                Icon(
+                    Icons.Filled.Send,
+                    contentDescription = "Send",
+                    tint = if (!sending && input.isNotBlank()) Color(0xFF33D6A6)
+                    else Color.White.copy(alpha = 0.3f)
+                )
             }
         }
+    }
+
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            title = { Text("Clear chat?") },
+            text = { Text("All messages will be deleted.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.clearAll()
+                    showClearConfirm = false
+                }) { Text("Clear") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm = false }) { Text("Cancel") }
+            }
+        )
     }
 }
 
 @Composable
-private fun Bubble(m: Msg) {
-    val shape = RoundedCornerShape(
-        topStart = 18.dp, topEnd = 18.dp,
-        bottomEnd = if (m.fromUser) 4.dp else 18.dp,
-        bottomStart = if (m.fromUser) 18.dp else 4.dp
-    )
-    val bg: Brush = if (m.fromUser)
-        Brush.horizontalGradient(listOf(Color(0xFF9F6BFF), Color(0xFF7C4DFF)))
-    else SolidColor(LiaColors.Card)
-
+private fun Bubble(msg: ChatMessage) {
+    val isUser = msg.role == "user"
     Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = if (m.fromUser) Arrangement.End else Arrangement.Start
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         Box(
-            Modifier.widthIn(max = 300.dp).clip(shape).background(bg).padding(12.dp)
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .clip(
+                    RoundedCornerShape(
+                        topStart = 16.dp,
+                        topEnd = 16.dp,
+                        bottomStart = if (isUser) 16.dp else 4.dp,
+                        bottomEnd = if (isUser) 4.dp else 16.dp
+                    )
+                )
+                .background(if (isUser) Color(0xFF7C5CFF) else Color(0xFF15151F))
+                .padding(12.dp)
         ) {
-            Text(m.text, color = LiaColors.TextMain, fontSize = 15.sp)
+            Text(text = msg.content, color = Color.White, fontSize = 14.sp)
         }
     }
 }
