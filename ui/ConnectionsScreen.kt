@@ -1,123 +1,141 @@
 package com.lia.assistant.ui
 
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
-import androidx.compose.foundation.clickable
+import android.Manifest
+import android.content.pm.PackageManager
+import android.speech.tts.TextToSpeech
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.lia.assistant.data.KeyStore
-import com.lia.assistant.ui.theme.LiaColors
+import com.lia.assistant.service.AccessibilityController
+import com.lia.assistant.voice.VoiceServiceState
+
+private data class ConnectionItem(
+    val name: String,
+    val description: String,
+    val icon: ImageVector,
+    val active: Boolean
+)
 
 @Composable
-fun ConnectionsScreen(onBack: () -> Unit) {
+fun ConnectionsScreen() {
     val ctx = LocalContext.current
-    val store = remember { KeyStore(ctx) }
-    var gemini by remember { mutableStateOf(store.geminiKey) }
-    var groq by remember { mutableStateOf(store.groqKeys) }
-    var geminiReady by remember { mutableStateOf(store.geminiKey.isNotEmpty()) }
-    var groqCount by remember { mutableStateOf(store.groqKeyList().size) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val bgRunning by VoiceServiceState.isRunning.collectAsState()
+
+    var hasGroq by remember { mutableStateOf(false) }
+    var hasGemini by remember { mutableStateOf(false) }
+    var hasMic by remember { mutableStateOf(false) }
+    var hasTts by remember { mutableStateOf(false) }
+    var hasYt by remember { mutableStateOf(false) }
+    var hasWa by remember { mutableStateOf(false) }
+    var hasA11y by remember { mutableStateOf(false) }
+
+    fun refresh() {
+        hasGroq = !KeyStore.get(ctx, KeyStore.KEY_GROQ).isNullOrBlank()
+        hasGemini = !KeyStore.get(ctx, KeyStore.KEY_GEMINI).isNullOrBlank()
+        hasMic = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        hasA11y = AccessibilityController.isEnabled(ctx)
+        hasYt = try {
+            ctx.packageManager.getLaunchIntentForPackage("com.google.android.youtube") != null
+        } catch (e: Exception) { false }
+        hasWa = try {
+            ctx.packageManager.getLaunchIntentForPackage("com.whatsapp") != null
+        } catch (e: Exception) { false }
+        hasTts = try {
+            val intent = android.content.Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE)
+            ctx.packageManager.queryIntentServices(intent, 0).isNotEmpty()
+        } catch (e: Exception) { false }
+    }
+
+    LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(bgRunning) { refresh() }
+
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
+    val items = listOf(
+        ConnectionItem("Groq", "Fast LLM (chat + voice)", Icons.Filled.Bolt, hasGroq),
+        ConnectionItem("Gemini", "Google's AI model", Icons.Filled.AutoAwesome, hasGemini),
+        ConnectionItem("Voice Input", "Speech recognition", Icons.Filled.Mic, hasMic),
+        ConnectionItem("Voice Output", "Text-to-speech engine", Icons.Filled.VolumeUp, hasTts),
+        ConnectionItem("Background Voice", "Foreground service", Icons.Filled.PlayCircle, bgRunning),
+        ConnectionItem("YouTube", "Play music/videos", Icons.Filled.PlayArrow, hasYt),
+        ConnectionItem("WhatsApp", "Send messages", Icons.Filled.Chat, hasWa),
+        ConnectionItem("Accessibility", "Tap · type · lock", Icons.Filled.SettingsAccessibility, hasA11y)
+    )
 
     Column(
-        Modifier
+        modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 20.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = LiaColors.TextMain)
-            }
-            Text("Connections", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = LiaColors.TextMain)
-        }
-        Text(
-            "LIA talks and chats through your own keys. They are stored only on this phone.",
-            color = LiaColors.TextSub, fontSize = 13.sp,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
+        LiaTopBar("Connections", "Live status of LIA's features")
 
-        KeyCard(
-            title = "Voice - Gemini key",
-            subtitle = "Powers live voice conversations.",
-            status = if (geminiReady) "Ready" else null,
-            value = gemini,
-            onChange = { gemini = it },
-            buttonText = "Save Gemini key",
-            linkText = "Get a free key at Google AI Studio",
-            url = "https://aistudio.google.com/app/apikey",
-            onSave = {
-                store.geminiKey = gemini
-                geminiReady = store.geminiKey.isNotEmpty()
-                Toast.makeText(ctx, "Gemini key saved", Toast.LENGTH_SHORT).show()
-            }
-        )
-        Spacer(Modifier.height(14.dp))
-        KeyCard(
-            title = "Chat - Groq keys",
-            subtitle = "Fast typed replies. Add several keys, separated by commas - they take turns if one is rate limited.",
-            status = if (groqCount > 0) "$groqCount key ready" else null,
-            value = groq,
-            onChange = { groq = it },
-            buttonText = "Save Groq keys",
-            linkText = "Get a free key at Groq",
-            url = "https://console.groq.com/keys",
-            onSave = {
-                store.groqKeys = groq
-                groqCount = store.groqKeyList().size
-                Toast.makeText(ctx, "Groq keys saved", Toast.LENGTH_SHORT).show()
-            }
-        )
-        Spacer(Modifier.height(16.dp))
-    }
-}
-
-@Composable
-private fun KeyCard(
-    title: String, subtitle: String, status: String?,
-    value: String, onChange: (String) -> Unit,
-    buttonText: String, linkText: String, url: String, onSave: () -> Unit
-) {
-    val ctx = LocalContext.current
-    LiaCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, fontWeight = FontWeight.SemiBold, color = LiaColors.TextMain, modifier = Modifier.weight(1f))
-                if (status != null) Text("✓ $status", color = LiaColors.Green, fontSize = 12.sp)
-            }
-            Text(subtitle, color = LiaColors.TextSub, fontSize = 12.sp)
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = value,
-                onValueChange = onChange,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                shape = RoundedCornerShape(12.dp),
-                colors = liaFieldColors(),
-                placeholder = { Text("Paste key here", color = LiaColors.TextSub) }
-            )
-            Spacer(Modifier.height(12.dp))
-            GradientButton(buttonText) { onSave() }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "$linkText ↗", color = LiaColors.PurpleLight, fontSize = 13.sp,
-                modifier = Modifier.clickable {
-                    ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        items.forEach { item ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF15151F))
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF7C5CFF).copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(item.icon, contentDescription = null, tint = Color(0xFF7C5CFF))
                 }
-            )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        item.name,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        fontSize = 15.sp
+                    )
+                    Text(
+                        item.description,
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.5f)
+                    )
+                }
+                StatusPill(text = if (item.active) "Ready" else "Off", active = item.active)
+            }
         }
+        Spacer(Modifier.height(20.dp))
     }
 }
