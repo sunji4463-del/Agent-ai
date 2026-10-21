@@ -1,6 +1,10 @@
 package com.lia.assistant.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,6 +25,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.lia.assistant.data.KeyStore
@@ -43,7 +48,7 @@ fun SettingsScreen() {
     ) {
         LiaTopBar("Settings", "API keys, permissions, device control")
 
-        // ---------- Gemini ----------
+        // ---- Gemini ----
         LiaCard {
             Text("Gemini API Key", fontWeight = FontWeight.SemiBold, color = Color.White)
             Spacer(Modifier.height(6.dp))
@@ -74,7 +79,7 @@ fun SettingsScreen() {
 
         Spacer(Modifier.height(12.dp))
 
-        // ---------- Groq ----------
+        // ---- Groq ----
         LiaCard {
             Text("Groq API Key", fontWeight = FontWeight.SemiBold, color = Color.White)
             Spacer(Modifier.height(6.dp))
@@ -108,9 +113,9 @@ fun SettingsScreen() {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = {
-                    if (gemini.isNotBlank()) KeyStore.save(ctx, KeyStore.KEY_GEMINI, gemini)
+                    if (gemini.isNotBlank()) KeyStore.save(ctx, KeyStore.KEY_GEMINI, gemini.trim())
                     else KeyStore.remove(ctx, KeyStore.KEY_GEMINI)
-                    if (groq.isNotBlank()) KeyStore.save(ctx, KeyStore.KEY_GROQ, groq)
+                    if (groq.isNotBlank()) KeyStore.save(ctx, KeyStore.KEY_GROQ, groq.trim())
                     else KeyStore.remove(ctx, KeyStore.KEY_GROQ)
                     savedMsg = "Saved ✓"
                 },
@@ -135,18 +140,117 @@ fun SettingsScreen() {
 
         Spacer(Modifier.height(24.dp))
 
-        // ---------- Accessibility ----------
+        // ---- App Permissions ----
+        AppPermissionsCard()
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---- Accessibility ----
         AccessibilityCard()
 
         Spacer(Modifier.height(24.dp))
         Text("About", fontWeight = FontWeight.SemiBold, color = Color.White)
         Spacer(Modifier.height(6.dp))
         Text(
-            "LIA — Local Intelligent Assistant\nVersion 1.0 (Phase 5)\nBuilt with Kotlin + Jetpack Compose",
+            "LIA — Local Intelligent Assistant\nVersion 1.0 (Phase 7 · Stable)\nBuilt with Kotlin + Jetpack Compose",
             fontSize = 13.sp,
             color = Color.White.copy(alpha = 0.6f)
         )
         Spacer(Modifier.height(30.dp))
+    }
+}
+
+@Composable
+private fun AppPermissionsCard() {
+    val ctx = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun has(perm: String) =
+        ContextCompat.checkSelfPermission(ctx, perm) == PackageManager.PERMISSION_GRANTED
+
+    var contacts by remember { mutableStateOf(has(Manifest.permission.READ_CONTACTS)) }
+    var call by remember { mutableStateOf(has(Manifest.permission.CALL_PHONE)) }
+    var mic by remember { mutableStateOf(has(Manifest.permission.RECORD_AUDIO)) }
+
+    val contactsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { contacts = it }
+
+    val callLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { call = it }
+
+    val micLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { mic = it }
+
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                contacts = has(Manifest.permission.READ_CONTACTS)
+                call = has(Manifest.permission.CALL_PHONE)
+                mic = has(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
+    LiaCard {
+        Text("App Permissions", fontWeight = FontWeight.SemiBold, color = Color.White)
+        Text(
+            "Required for voice, calls, and messaging",
+            fontSize = 12.sp,
+            color = Color.White.copy(alpha = 0.5f)
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        PermissionRow(
+            label = "Microphone",
+            subtitle = "For voice input",
+            granted = mic,
+            onRequest = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+        )
+        Spacer(Modifier.height(8.dp))
+        PermissionRow(
+            label = "Contacts",
+            subtitle = "Resolve names to numbers for calls/SMS",
+            granted = contacts,
+            onRequest = { contactsLauncher.launch(Manifest.permission.READ_CONTACTS) }
+        )
+        Spacer(Modifier.height(8.dp))
+        PermissionRow(
+            label = "Phone",
+            subtitle = "Direct call (else dialer opens)",
+            granted = call,
+            onRequest = { callLauncher.launch(Manifest.permission.CALL_PHONE) }
+        )
+    }
+}
+
+@Composable
+private fun PermissionRow(
+    label: String,
+    subtitle: String,
+    granted: Boolean,
+    onRequest: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
+        }
+        if (granted) {
+            StatusPill(text = "Granted", active = true)
+        } else {
+            TextButton(onClick = onRequest) {
+                Text("Grant", color = Color(0xFF7C5CFF), fontSize = 12.sp)
+            }
+        }
     }
 }
 
