@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LIA</string>
+    <string name="accessibility_desc">LIA can tap, type, and lock the screen on your behalf when you ask it to. It does not read your screen content automatically or record your data.</string>
+</resources>
