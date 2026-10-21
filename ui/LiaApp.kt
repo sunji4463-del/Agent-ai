@@ -1,111 +1,69 @@
 package com.lia.assistant.ui
 
-import androidx.compose.foundation.*
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.lia.assistant.ui.theme.LiaColors
 
-private fun NavController.go(route: String) = navigate(route) {
-    popUpTo("home") { saveState = true }
-    launchSingleTop = true
-    restoreState = true
+sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
+    data object Home : Screen("home", "Home", Icons.Filled.Home)
+    data object Chat : Screen("chat", "Chat", Icons.Filled.Chat)
+    data object Connections : Screen("connections", "Connect", Icons.Filled.Tune)
+    data object Settings : Screen("settings", "Settings", Icons.Filled.Settings)
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+private val bottomItems = listOf(Screen.Home, Screen.Chat, Screen.Connections, Screen.Settings)
+
 @Composable
 fun LiaApp() {
-    val nav = rememberNavController()
-    val entry by nav.currentBackStackEntryAsState()
-    val route = entry?.destination?.route ?: "home"
-    val showBar = route in listOf("home", "chat", "history", "settings")
-    val imeVisible = WindowInsets.isImeVisible
+    val navController = rememberNavController()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = backStackEntry?.destination
 
-    LiaBackground {
-        Scaffold(
-            containerColor = Color.Transparent,
-            bottomBar = {
-                if (showBar && !imeVisible) {
-                    BottomBar(route, onGo = { nav.go(it) }, onVoice = { nav.navigate("voice") })
-                }
-            }
-        ) { pad ->
-            NavHost(nav, startDestination = "home", modifier = Modifier.padding(pad)) {
-                composable("home") {
-                    HomeScreen(
-                        onVoice = { nav.navigate("voice") },
-                        onChat = { nav.go("chat") },
-                        onSettings = { nav.go("settings") }
+    Scaffold(
+        bottomBar = {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                bottomItems.forEach { screen ->
+                    NavigationBarItem(
+                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                        onClick = {
+                            navController.navigate(screen.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        icon = { Icon(screen.icon, contentDescription = screen.label) },
+                        label = { Text(screen.label) }
                     )
                 }
-                composable("chat") { ChatScreen() }
-                composable("history") { HistoryScreen() }
-                composable("settings") { SettingsScreen(onConnections = { nav.navigate("connections") }) }
-                composable("connections") { ConnectionsScreen(onBack = { nav.popBackStack() }) }
-                composable("voice") { VoiceScreen(onEnd = { nav.popBackStack() }) }
             }
         }
-    }
-}
-
-@Composable
-private fun BottomBar(route: String, onGo: (String) -> Unit, onVoice: () -> Unit) {
-    val shape = RoundedCornerShape(26.dp)
-    Box(
-        Modifier
-            .navigationBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 8.dp)
-    ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(64.dp)
-                .background(LiaColors.Card.copy(alpha = 0.92f), shape)
-                .border(1.dp, LiaColors.Stroke, shape),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceEvenly
+    ) { padding ->
+        NavHost(
+            navController = navController,
+            startDestination = Screen.Home.route,
+            modifier = Modifier.padding(padding)
         ) {
-            NavItem(Icons.Rounded.Home, "Home", route == "home") { onGo("home") }
-            NavItem(Icons.Rounded.ChatBubbleOutline, "Chat", route == "chat") { onGo("chat") }
-            Box(Modifier.requiredSize(72.dp).offset(y = (-8).dp)) {
-                GlowOrb(72.dp, onClick = onVoice)
-            }
-            NavItem(Icons.Rounded.History, "History", route == "history") { onGo("history") }
-            NavItem(Icons.Rounded.Settings, "Settings", route == "settings") { onGo("settings") }
+            composable(Screen.Home.route) { HomeScreen(navController) }
+            composable(Screen.Chat.route) { ChatScreen() }
+            composable(Screen.Connections.route) { ConnectionsScreen() }
+            composable(Screen.Settings.route) { SettingsScreen() }
+            composable("history") { HistoryScreen() }
         }
-    }
-}
-
-@Composable
-private fun NavItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
-    val c = if (selected) LiaColors.Gold else LiaColors.TextSub
-    Column(
-        Modifier
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            )
-            .padding(horizontal = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(icon, label, tint = c, modifier = Modifier.size(22.dp))
-        Text(label, color = c, fontSize = 10.sp)
     }
 }
