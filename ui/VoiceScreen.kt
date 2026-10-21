@@ -131,7 +131,7 @@ fun VoiceScreen(navController: NavController, vm: VoiceViewModel = viewModel()) 
         Spacer(Modifier.height(24.dp))
 
         Text(
-            text = stateLabel(state),
+            text = stateLabel(state, bgRunning),
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
             color = Color.White
@@ -325,8 +325,8 @@ private fun Orb(state: VoiceState) {
     }
 }
 
-private fun stateLabel(state: VoiceState): String = when (state) {
-    VoiceState.Idle -> "Tap mic to speak"
+private fun stateLabel(state: VoiceState, bg: Boolean): String = when (state) {
+    VoiceState.Idle -> if (bg) "Background active" else "Tap mic to speak"
     VoiceState.Listening -> "Listening…"
     VoiceState.Thinking -> "Thinking…"
     VoiceState.Speaking -> "Speaking…"
