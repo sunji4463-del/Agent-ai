@@ -1,0 +1,34 @@
+package com.lia.assistant.voice
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+object VoiceStateHolder {
+    private val _state = MutableStateFlow(VoiceState.Idle)
+    val state: StateFlow<VoiceState> = _state
+    fun setState(v: VoiceState) { _state.value = v }
+
+    private val _partial = MutableStateFlow("")
+    val partial: StateFlow<String> = _partial
+    fun setPartial(v: String) { _partial.value = v }
+
+    private val _reply = MutableStateFlow("")
+    val reply: StateFlow<String> = _reply
+    fun setReply(v: String) { _reply.value = v }
+
+    private val _userSaid = MutableStateFlow("")
+    val userSaid: StateFlow<String> = _userSaid
+    fun setUserSaid(v: String) { _userSaid.value = v }
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+    fun setError(v: String?) { _error.value = v }
+
+    fun reset() {
+        _state.value = VoiceState.Idle
+        _partial.value = ""
+        _reply.value = ""
+        _userSaid.value = ""
+        _error.value = null
+    }
+}
