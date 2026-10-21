@@ -30,6 +30,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.lia.assistant.VoiceViewModel
+import com.lia.assistant.service.ServiceController
+import com.lia.assistant.voice.VoiceServiceState
 import com.lia.assistant.voice.VoiceState
 
 @Composable
@@ -39,6 +41,7 @@ fun VoiceScreen(navController: NavController, vm: VoiceViewModel = viewModel()) 
     val reply by vm.reply.collectAsState()
     val userSaid by vm.userSaid.collectAsState()
     val error by vm.error.collectAsState()
+    val bgRunning by VoiceServiceState.isRunning.collectAsState()
 
     val ctx = LocalContext.current
     var hasPermission by remember {
@@ -53,22 +56,24 @@ fun VoiceScreen(navController: NavController, vm: VoiceViewModel = viewModel()) 
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasPermission = granted
-        if (granted) vm.startListening()
+        if (granted && !bgRunning) vm.startListening()
     }
 
     LaunchedEffect(Unit) {
         if (!hasPermission && !askedOnce) {
             askedOnce = true
             permLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        } else if (hasPermission) {
+        } else if (hasPermission && !VoiceServiceState.isRunning.value) {
             vm.startListening()
         }
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            vm.stopListening()
-            vm.stopSpeaking()
+            if (!VoiceServiceState.isRunning.value) {
+                vm.stopListening()
+                vm.stopSpeaking()
+            }
         }
     }
 
@@ -87,9 +92,35 @@ fun VoiceScreen(navController: NavController, vm: VoiceViewModel = viewModel()) 
                 Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
             }
             Spacer(Modifier.width(4.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text("Voice", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                Text("Speak with LIA", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                Text(
+                    if (bgRunning) "Running in background" else "Speak with LIA",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
+            }
+            TextButton(
+                onClick = {
+                    if (bgRunning) {
+                        ServiceController.stop(ctx)
+                    } else {
+                        if (!hasPermission) {
+                            permLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        } else {
+                            vm.stopListening()
+                            vm.stopSpeaking()
+                            ServiceController.start(ctx)
+                        }
+                    }
+                }
+            ) {
+                Text(
+                    if (bgRunning) "BG: ON" else "BG: OFF",
+                    color = if (bgRunning) Color(0xFF33D6A6) else Color.White.copy(alpha = 0.6f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
 
@@ -108,7 +139,6 @@ fun VoiceScreen(navController: NavController, vm: VoiceViewModel = viewModel()) 
 
         Spacer(Modifier.height(12.dp))
 
-        // Content: partial / user speech / reply
         when (state) {
             VoiceState.Listening -> {
                 Text(
@@ -164,6 +194,13 @@ fun VoiceScreen(navController: NavController, vm: VoiceViewModel = viewModel()) 
                         color = Color.White.copy(alpha = 0.5f),
                         textAlign = TextAlign.Center
                     )
+                } else if (bgRunning) {
+                    Text(
+                        "Listening in background — close app to test",
+                        fontSize = 13.sp,
+                        color = Color.White.copy(alpha = 0.5f),
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
@@ -187,9 +224,9 @@ fun VoiceScreen(navController: NavController, vm: VoiceViewModel = viewModel()) 
 
         Spacer(Modifier.weight(1f))
 
-        // Main mic button
         Button(
             onClick = {
+                if (bgRunning) return@Button
                 if (!hasPermission) {
                     permLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     return@Button
@@ -205,14 +242,14 @@ fun VoiceScreen(navController: NavController, vm: VoiceViewModel = viewModel()) 
                 .size(80.dp)
                 .clip(CircleShape),
             shape = CircleShape,
-            enabled = state != VoiceState.Thinking,
+            enabled = !bgRunning && state != VoiceState.Thinking,
             colors = ButtonDefaults.buttonColors(
                 containerColor = when (state) {
                     VoiceState.Idle, VoiceState.Listening -> Color(0xFF7C5CFF)
                     VoiceState.Speaking -> Color(0xFF33D6A6)
                     VoiceState.Thinking -> Color(0xFF33A6D6)
                 },
-                disabledContainerColor = Color(0xFF33A6D6)
+                disabledContainerColor = Color(0xFF33A6D6).copy(alpha = 0.5f)
             ),
             contentPadding = PaddingValues(0.dp)
         ) {
